@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #ifdef __linux__
 #include <sys/sysmacros.h>
+#include <sys/xattr.h>
 #endif
 
 using namespace std;
@@ -167,7 +168,21 @@ static string formatModTime(time_t mtime) {
 struct LongEntry {
     string permissions, links, owner, group, size, major, minor, date, name;
     bool is_device;
+    bool has_acl;
+    bool print;
 };
+
+// True if the file carries a POSIX ACL (shown by ls -l as a '+' after the mode)
+static bool hasAcl(const string &path, bool isDir) {
+#ifdef __linux__
+    if (lgetxattr(path.c_str(), "system.posix_acl_access", nullptr, 0) > 0) return true;
+    if (isDir && lgetxattr(path.c_str(), "system.posix_acl_default", nullptr, 0) > 0) return true;
+#else
+    (void)path;
+    (void)isDir;
+#endif
+    return false;
+}
 
 static string padLeft(const string &s, size_t width) {
     return s.size() >= width ? s : string(width - s.size(), ' ') + s;
@@ -177,12 +192,20 @@ static string padRight(const string &s, size_t width) {
     return s.size() >= width ? s : s + string(width - s.size(), ' ');
 }
 
-void printLongListing(const string &dir, const vector<string> &names, bool showTotal) {
+void printLongListing(const string &dir, const vector<string> &names, bool showTotal,
+                      const vector<string> &widthOnlyNames) {
     vector<LongEntry> entries;
+    // GNU ls sizes the columns of the file-operand block using every operand,
+    // including directories that are listed separately afterwards.
+    vector<string> allNames = names;
+    allNames.insert(allNames.end(), widthOnlyNames.begin(), widthOnlyNames.end());
     long long totalBlocks = 0;
     size_t linksW = 0, ownerW = 0, groupW = 0, sizeW = 0, majorW = 0, minorW = 0;
+    bool anyAcl = false;
 
-    for (const string &name : names) {
+    for (size_t idx = 0; idx < allNames.size(); idx++) {
+        const string &name = allNames[idx];
+        bool printEntry = idx < names.size();
         string fullPath;
         if (dir.empty()) fullPath = name;
         else if (dir[dir.size() - 1] == '/') fullPath = dir + name;
@@ -193,10 +216,13 @@ void printLongListing(const string &dir, const vector<string> &names, bool showT
             perror(("ls: cannot access '" + fullPath + "'").c_str());
             continue;
         }
-        totalBlocks += statBuf.st_blocks;
+        if (printEntry) totalBlocks += statBuf.st_blocks;
 
         LongEntry e;
+        e.print = printEntry;
         e.permissions = getFilePermissions(statBuf.st_mode);
+        e.has_acl = !S_ISLNK(statBuf.st_mode) && hasAcl(fullPath, S_ISDIR(statBuf.st_mode));
+        if (e.has_acl) anyAcl = true;
         e.links = to_string(static_cast<unsigned long>(statBuf.st_nlink));
         struct passwd *pw = getpwuid(statBuf.st_uid);
         struct group *gr = getgrgid(statBuf.st_gid);
@@ -237,10 +263,13 @@ void printLongListing(const string &dir, const vector<string> &names, bool showT
     }
 
     for (const LongEntry &e : entries) {
+        if (!e.print) continue;
         string sizeField = e.is_device
             ? padLeft(padLeft(e.major, majorW) + ", " + padLeft(e.minor, minorW), sizeW)
             : padLeft(e.size, sizeW);
-        cout << e.permissions << " "
+        cout << e.permissions;
+        if (anyAcl) cout << (e.has_acl ? "+" : " ");
+        cout << " "
              << padLeft(e.links, linksW) << " "
              << padRight(e.owner, ownerW) << " "
              << padRight(e.group, groupW) << " "

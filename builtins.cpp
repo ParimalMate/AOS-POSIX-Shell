@@ -168,7 +168,7 @@ void handle_ls(vector<string> args) {
 
     if (!files.empty()) {
         if (long_format) {
-            printLongListing("", files, false);
+            printLongListing("", files, false, dirs);
         } else {
             for (const string &file : files) cout << file << endl;
         }
