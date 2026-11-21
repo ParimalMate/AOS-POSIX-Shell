@@ -50,6 +50,8 @@ static void prepare_child(pid_t pgid, bool background) {
     signal(SIGTTOU, SIG_DFL);
     signal(SIGTTIN, SIG_DFL);
     signal(SIGCHLD, SIG_DFL);
+    signal(SIGPIPE, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
 
     sigset_t empty;
     sigemptyset(&empty);
@@ -179,13 +181,15 @@ void execute_pipeline(vector<vector<string>> commands, bool background) {
         if (pid == 0) {
             prepare_child(pipeline_pgid, background);
 
-            if (i == 0 && has_input_redirs[i] && input_fds[i] != -1) {
+            // A redirection on any command of the pipeline takes precedence
+            // over the pipe at that end, as in bash.
+            if (has_input_redirs[i] && input_fds[i] != -1) {
                 dup2(input_fds[i], STDIN_FILENO);
             } else if (i > 0) {
                 dup2(pipes[i-1][0], STDIN_FILENO);
             }
 
-            if (i == num_commands - 1 && has_output_redirs[i] && output_fds[i] != -1) {
+            if (has_output_redirs[i] && output_fds[i] != -1) {
                 dup2(output_fds[i], STDOUT_FILENO);
             } else if (i < num_commands - 1) {
                 dup2(pipes[i][1], STDOUT_FILENO);

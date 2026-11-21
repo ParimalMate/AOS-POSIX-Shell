@@ -155,6 +155,10 @@ void handle_ls(vector<string> args) {
         struct stat stat_buf;
         // With -l a symbolic link operand is listed itself, not followed
         int rc = long_format ? lstat(actual_path.c_str(), &stat_buf) : stat(actual_path.c_str(), &stat_buf);
+        if (rc != 0 && !long_format) {
+            // A dangling symbolic link is still listed by name
+            rc = lstat(actual_path.c_str(), &stat_buf);
+        }
         if (rc != 0) {
             perror(("ls: cannot access '" + actual_path + "'").c_str());
             continue;

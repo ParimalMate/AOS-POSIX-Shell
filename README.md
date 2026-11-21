@@ -23,7 +23,7 @@ It supports built-in commands, execution of system commands in the foreground an
 
 | Requirement                         | File(s)                                  |
 |-------------------------------------|------------------------------------------|
-| 1. Prompt `user@host:dir>`          | `utils.cpp` (`getPrompt`, `getDisplayPath`) |
+| 1. Prompt `<user@host:dir>`         | `utils.cpp` (`getPrompt`, `getDisplayPath`) |
 | 2. `cd`, `echo`, `pwd`              | `builtins.cpp`                           |
 | 3. `ls` with `-a`, `-l`             | `builtins.cpp`, `utils.cpp` (`printLongListing`) |
 | 4. Foreground / background commands | `execution.cpp`, `main.cpp`              |
@@ -40,8 +40,9 @@ It supports built-in commands, execution of system commands in the foreground an
 
 ## ⚙️ Features
 
-- **Prompt** – `username@hostname:path>`; the directory the shell was started from is shown as `~`.
+- **Prompt** – `<username@hostname:path>`; the directory the shell was started from is shown as `~` (subdirectories as `~/dir/sub`, anything outside it as an absolute path).
 - **Command lists** – several commands separated by `;` (split with `strtok`). Extra spaces and tabs are ignored.
+- **`&`** – every command followed by `&` runs in the background, e.g. `gedit & vim & ls` starts two background jobs and runs `ls` in the foreground.
 - **Built-in commands** (implemented without `exec`)
   - `cd` – supports `.`, `..`, `-`, `~`, `~/path`; no argument goes to the shell's home; more than one argument prints `Invalid arguments`
   - `pwd` – prints the absolute working directory
@@ -49,11 +50,11 @@ It supports built-in commands, execution of system commands in the foreground an
   - `ls` – flags `-a`, `-l` in any combination and order (`-la`, `-al`, `-l dir1 -a dir2`), with `.`, `..`, `~`, files and directories. `-l` output follows GNU `ls -l` (total, column alignment, dates)
   - `pinfo [pid]` – process status (`R`, `S`, `Z`, `T`, with `+` for the foreground process group), virtual memory and executable path, read from `/proc`
   - `search <name>` – recursively searches the current directory, prints `True`/`False`
-  - `history [num]` – last 10 commands by default, or the last `num`. 20 commands are stored in `.myshell_history` and kept across sessions
+  - `history [num]` – last 10 commands by default, or the last `num`. 20 commands are stored in `~/.myshell_history` (in `$HOME`) and kept across sessions, wherever the shell is started from. Consecutive duplicates are stored once
   - `exit` – terminates the shell
-- **System commands** – run with `fork` + `execvp`, in the foreground or in the background with `&` (the PID is printed). Multiple background jobs are supported and finished ones are reaped by the `SIGCHLD` handler.
+- **System commands** – run with `fork` + `execvp`, in the foreground or in the background with `&` (the PID is printed). Multiple background jobs are supported. The `SIGCHLD` handler reaps finished background jobs and the shell reports them, e.g. `sleep with pid 4242 exited normally` or `... exited abnormally (terminated by signal 9)`.
 - **I/O redirection** – `<`, `>` (truncate), `>>` (append); output files are created with permissions `0644`; a missing input file prints an error.
-- **Pipelines** – any number of `|`-connected commands, combined with redirection (e.g. `cat < in.txt | wc -l > lines.txt`). Built-ins work inside pipelines.
+- **Pipelines** – any number of `|`-connected commands, combined with redirection (e.g. `cat < in.txt | wc -l > lines.txt`). A redirection on any command of a pipeline takes precedence over the pipe, as in bash. Built-ins work inside pipelines.
 - **Signals**
   - `CTRL-C` – interrupts the foreground job; at the prompt it discards the current line
   - `CTRL-Z` – stops the foreground job and moves it to the background
@@ -62,6 +63,7 @@ It supports built-in commands, execution of system commands in the foreground an
   - First word of a command (or after `;`, `|`, `&`) completes command names from built-ins and `$PATH`
   - Other words complete files/directories in the current directory (paths like `dir/fi` also work)
   - One match is completed (a `/` is added for directories); several matches fill the common prefix, or are listed below the prompt if there is no common prefix to add
+  - A TAB inside pasted text (or input that is not a terminal) is treated as a space, so pasted commands containing tabs still work
 - **History navigation** – UP/DOWN arrow keys cycle through earlier commands, which can then be edited and run.
 
 ---
@@ -95,7 +97,7 @@ Start the shell with:
 You'll see a prompt of the form:
 
 ```
-<username>@<system_name>:<current_directory>>
+<username@system_name:current_directory>
 ```
 
 ---
@@ -103,26 +105,26 @@ You'll see a prompt of the form:
 ## 📖 Example Usage
 
 ```bash
-user@host:~> cd newdir/test
-user@host:~/newdir/test> cd ..
-user@host:~/newdir> pwd
+<user@host:~> cd newdir/test
+<user@host:~/newdir/test> cd ..
+<user@host:~/newdir> pwd
 /home/user/project/newdir
-user@host:~/newdir> cd
-user@host:~> ls -al test_dir
-user@host:~> sleep 30 &
+<user@host:~/newdir> cd
+<user@host:~> ls -al test_dir
+<user@host:~> sleep 30 &
 [12345]
-user@host:~> pinfo 12345
+<user@host:~> pinfo 12345
 Process Status -- S
 memory -- 5432 {Virtual Memory}
 Executable Path -- /usr/bin/sleep
-user@host:~> search main.cpp
+<user@host:~> search main.cpp
 True
-user@host:~> cat sample.txt | head -7 | tail -5 > out.txt
-user@host:~> history 3
+<user@host:~> cat sample.txt | head -7 | tail -5 > out.txt
+<user@host:~> history 3
 search main.cpp
 cat sample.txt | head -7 | tail -5 > out.txt
 history 3
-user@host:~> exit
+<user@host:~> exit
 ```
 
 ---

@@ -28,6 +28,7 @@ extern bool shell_terminal_modes_saved;
 
 void setup_signal_handlers();
 void cleanup_background_processes();
+bool background_jobs_finished();
 void handle_command_error(const std::string &command, int errno_val);
 bool is_builtin_command(const std::string &command);
 

@@ -95,7 +95,7 @@ string getPrompt() {
     struct passwd *pw = getpwuid(getuid());
     string username = pw ? pw->pw_name : to_string(getuid());
     string displayPath = getDisplayPath();
-    return username + "@" + hostname + ":" + displayPath + "> ";
+    return "<" + username + "@" + hostname + ":" + displayPath + "> ";
 }
 
 // Replaces a leading shell-home prefix in `path` with "~".

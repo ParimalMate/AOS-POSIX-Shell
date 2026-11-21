@@ -3,6 +3,7 @@
 #include "utils.h"
 #include "autocomplete.h"
 #include <cerrno>
+#include <sys/select.h>
 #include <fstream>
 #include <termios.h>
 #include <unistd.h>
@@ -50,6 +51,34 @@ void add_to_history(const string& command) {
     save_history();
 }
 
+// True if more input is already waiting (e.g. the rest of a pasted line)
+static bool input_pending() {
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    struct timeval no_wait = {0, 0};
+    return select(STDIN_FILENO + 1, &fds, nullptr, nullptr, &no_wait) > 0;
+}
+
+// Handles signals that arrived while waiting at the prompt
+static void handle_prompt_signal(string &userInput) {
+    if (prompt_interrupted) {
+        // CTRL-C at the prompt: discard the line, show a fresh prompt
+        prompt_interrupted = 0;
+        userInput.clear();
+        history_index = -1;
+        cout << "\n" << getPrompt();
+        cout.flush();
+    }
+    if (background_jobs_finished()) {
+        // Report finished background jobs, then redraw what was being typed
+        cout << "\n";
+        cleanup_background_processes();
+        cout << getPrompt() << userInput;
+        cout.flush();
+    }
+}
+
 static void redraw_input_line(const string &text) {
     // Return to column 0, clear the line, then print prompt and text
     cout << "\r\033[K" << getPrompt() << text;
@@ -77,17 +106,23 @@ string get_input_with_history() {
     cout.flush();
     
     while (true) {
+        if (isTerminal) {
+            // Wait with select(), which is always interrupted by signals, so
+            // CTRL-C and finished background jobs are handled right away.
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(STDIN_FILENO, &fds);
+            if (select(STDIN_FILENO + 1, &fds, nullptr, nullptr, nullptr) == -1) {
+                if (errno == EINTR) {
+                    handle_prompt_signal(userInput);
+                    continue;
+                }
+            }
+        }
         ssize_t bytesRead = read(STDIN_FILENO, &keyPressed, 1);
         if (bytesRead == -1) {
             if (errno == EINTR) {
-                if (prompt_interrupted) {
-                    // CTRL-C at the prompt: discard the line, show a fresh prompt
-                    prompt_interrupted = 0;
-                    userInput.clear();
-                    history_index = -1;
-                    cout << "\n" << getPrompt();
-                    cout.flush();
-                }
+                handle_prompt_signal(userInput);
                 continue;
             }
             if (userInput.empty()) userInput = "\x04";
@@ -112,7 +147,14 @@ string get_input_with_history() {
             }
         }
         else if (keyPressed == '\t') {
-            handle_tab_completion(userInput);
+            if (!isTerminal || input_pending()) {
+                // A tab inside pasted or piped text separates words
+                userInput += ' ';
+                cout << ' ';
+                cout.flush();
+            } else {
+                handle_tab_completion(userInput);
+            }
         }
         else if (keyPressed == 27) {
             char escapeSequence[2];
